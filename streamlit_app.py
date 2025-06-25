@@ -4,13 +4,124 @@ from snowflake.snowpark.context import get_active_session
 from snowflake.snowpark import Session
 import pandas as pd
 import time
+from typing import Dict, List, Optional, Any
 
-# Lazy connection - only connect when actually needed
+# =============================================================================
+# CONFIGURATION SECTION - CUSTOMIZE THIS FOR EACH DASHBOARD
+# =============================================================================
+
+DASHBOARD_CONFIG = {
+    "page_title": "MTG Price Analysis",
+    "page_icon": "📊",
+    "main_title": "📊 MTG Price Analysis",
+    "main_description": "Average price trends of cards over the first 300 days after set release",
+    "cache_hours": 24  # How long to cache data (in hours)
+}
+
+# Define your charts here - each becomes its own page
+CHART_CONFIGS = [
+    {
+        "page_name": "Card Prices",
+        "page_icon": "💰",
+        "title": "Regular Card Prices",
+        "description": "Average price trends for cards across different sets",
+        "table_name": "price_after_launch",
+        "x_column": "DATE_DIFF",
+        "y_column": "AVG_USD", 
+        "group_by_column": "SET_NAME",
+        "x_label": "Days After Launch",
+        "y_label": "Average USD Price",
+        "expanded_title": "Regular Card Analysis",
+        "analysis_columns": {
+            "Total data points": "count_rows",
+            "Tracking period": "1-300 days after release", 
+            "Card rarities": "Mythic & Rare only",
+            "Sets analyzed": "count_unique_groups"
+        },
+        "insights": {
+            "Overall average price": ("mean", "AVG_USD"),
+            "Highest average set": ("max_group_avg", "AVG_USD", "SET_NAME")
+        }
+    },
+    {
+        "page_name": "Card Prices - Mythic/Rare",
+        "page_icon": "💰",
+        "title": "Regular Card Prices",
+        "description": "Average price trends for mythic and rare cards across different sets",
+        "table_name": "price_after_launch_rare_mythic",
+        "x_column": "DATE_DIFF",
+        "y_column": "AVG_USD", 
+        "group_by_column": "SET_NAME",
+        "x_label": "Days After Launch",
+        "y_label": "Average USD Price",
+        "expanded_title": "Regular Card Analysis",
+        "analysis_columns": {
+            "Total data points": "count_rows",
+            "Tracking period": "1-300 days after release", 
+            "Card rarities": "Mythic & Rare only",
+            "Sets analyzed": "count_unique_groups"
+        },
+        "insights": {
+            "Overall average price": ("mean", "AVG_USD"),
+            "Highest average set": ("max_group_avg", "AVG_USD", "SET_NAME")
+        }
+    },
+    {
+        "page_name": "Foil Card Prices",
+        "page_icon": "✨",
+        "title": "Foil Card Prices",
+        "description": "Average price trends for foil cards across different sets",
+        "table_name": "price_after_launch_foil",
+        "x_column": "DATE_DIFF",
+        "y_column": "AVG_USD",
+        "group_by_column": "SET_NAME",
+        "x_label": "Days After Launch", 
+        "y_label": "Average USD Foil Price",
+        "expanded_title": "Foil Card Analysis",
+        "analysis_columns": {
+            "Total data points": "count_rows",
+            "Tracking period": "1-300 days after release",
+            "Card type": "All expansion cards", 
+            "Sets analyzed": "count_unique_groups"
+        },
+        "insights": {
+            "Overall average foil price": ("mean", "AVG_USD"),
+            "Highest average set": ("max_group_avg", "AVG_USD", "SET_NAME")
+        }
+    },
+    {
+        "page_name": "Foil Card Prices - Mythic/Rare",
+        "page_icon": "✨",
+        "title": "Foil Card Prices",
+        "description": "Average price trends for mythic and rare foil cards across different sets",
+        "table_name": "price_after_launch_foil_rare_mythic",
+        "x_column": "DATE_DIFF",
+        "y_column": "AVG_USD",
+        "group_by_column": "SET_NAME",
+        "x_label": "Days After Launch", 
+        "y_label": "Average USD Foil Price",
+        "expanded_title": "Foil Card Analysis",
+        "analysis_columns": {
+            "Total data points": "count_rows",
+            "Tracking period": "1-300 days after release",
+            "Card type": "All expansion cards", 
+            "Sets analyzed": "count_unique_groups"
+        },
+        "insights": {
+            "Overall average foil price": ("mean", "AVG_USD"),
+            "Highest average set": ("max_group_avg", "AVG_USD", "SET_NAME")
+        }
+    }
+]
+
+# =============================================================================
+# CORE FUNCTIONALITY - GENERALLY SHOULDN'T NEED TO MODIFY
+# =============================================================================
+
 def get_snowflake_session():
     """Create fresh Snowflake session only when needed"""
     try:
         session = get_active_session()
-        # Test the connection with a simple query
         session.sql("SELECT 1").collect()
         return session, "Connected using active Snowflake session"
     except:
@@ -24,14 +135,13 @@ def get_snowflake_session():
                 "schema": st.secrets["snowflake"]["schema"]
             }
             session = Session.builder.configs(connection_parameters).create()
-            # Test the new connection
             session.sql("SELECT 1").collect()
             return session, "Connected to Snowflake using credentials"
         except Exception as e:
             st.error(f"Failed to connect to Snowflake: {e}")
             st.stop()
 
-def execute_query_with_retry(query, max_retries=2):
+def execute_query_with_retry(query: str, max_retries: int = 2) -> pd.DataFrame:
     """Execute query with automatic retry on connection failure"""
     for attempt in range(max_retries + 1):
         try:
@@ -44,144 +154,164 @@ def execute_query_with_retry(query, max_retries=2):
                 return pd.DataFrame()
             time.sleep(1)
 
-# Cache price data for 24 hours (prices only update once per day)
-@st.cache_data(ttl=86400, show_spinner=False)  # Cache for 24 hours, hide spinner for cached data
-def get_price_after_launch():
-    """Get price after launch data and cache results"""
-    try:
-        query = "SELECT * FROM price_after_launch"
-        return execute_query_with_retry(query)
-    except Exception as e:
-        st.error(f"Error querying price after launch data: {str(e)}")
-        return pd.DataFrame()
-
-@st.cache_data(ttl=86400, show_spinner=False)  # Cache for 24 hours, hide spinner for cached data
-def get_price_after_launch_foil():
-    """Get foil price after launch data and cache results"""
-    try:
-        query = "SELECT * FROM price_after_launch_foil"
-        return execute_query_with_retry(query)
-    except Exception as e:
-        st.error(f"Error querying foil price after launch data: {str(e)}")
-        return pd.DataFrame()
-
-# Page configuration
-st.set_page_config(
-    page_title="MTG Price Analysis",
-    page_icon="📊",
-    layout="wide"
-)
-
-# Main title
-st.title("📊 MTG Price Analysis")
-st.write("Average price trends of cards over the first 300 days after set release")
-
-# Load and display the data
-with st.spinner("Loading price analysis data..."):
-    launch_df = get_price_after_launch()
-    foil_df = get_price_after_launch_foil()
-
-# Regular Card Prices
-st.subheader("💰 Regular Card Prices")
-if not launch_df.empty:
-    # Prepare data for chart (pivot to get sets as separate series)
-    chart_data = launch_df.pivot(index='DATE_DIFF', columns='SET_NAME', values='AVG_USD')
+def get_cached_data(table_name: str, cache_hours: int = 24) -> pd.DataFrame:
+    """Generic function to get and cache data from any table"""
     
-    # Sort by date_diff for proper line chart
-    chart_data = chart_data.sort_index()
+    @st.cache_data(ttl=cache_hours*3600, show_spinner=False)
+    def _fetch_data(table: str) -> pd.DataFrame:
+        try:
+            query = f"SELECT * FROM {table}"
+            return execute_query_with_retry(query)
+        except Exception as e:
+            st.error(f"Error querying {table}: {str(e)}")
+            return pd.DataFrame()
+    
+    return _fetch_data(table_name)
+
+def calculate_insight(df: pd.DataFrame, insight_type: str, *args) -> str:
+    """Calculate various insights from the dataframe"""
+    if insight_type == "mean":
+        column = args[0]
+        value = df[column].mean()
+        return f"${value:.2f}"
+    
+    elif insight_type == "max_group_avg":
+        value_col, group_col = args[0], args[1]
+        group_averages = df.groupby(group_col)[value_col].mean()
+        max_group = group_averages.idxmax()
+        max_value = group_averages.max()
+        return f"{max_group} (${max_value:.2f})"
+    
+    return "N/A"
+
+def calculate_analysis_stat(df: pd.DataFrame, stat_type: str, group_col: Optional[str] = None) -> str:
+    """Calculate analysis statistics"""
+    if stat_type == "count_rows":
+        return f"{len(df):,}"
+    elif stat_type == "count_unique_groups" and group_col:
+        return f"{df[group_col].nunique()} expansion sets"
+    else:
+        return stat_type  # Return as-is if it's a static string
+
+def render_chart_page(config: Dict[str, Any]):
+    """Render a complete chart page based on configuration"""
+    st.title(config["title"])
+    st.write(config["description"])
+    
+    # Load data with spinner
+    with st.spinner(f"Loading {config['page_name'].lower()} data..."):
+        df = get_cached_data(config["table_name"], DASHBOARD_CONFIG["cache_hours"])
+    
+    if df.empty:
+        st.error(f"Unable to load data from {config['table_name']}. Please try refreshing the page.")
+        return
+    
+    # Prepare data for chart
+    chart_data = df.pivot(
+        index=config["x_column"], 
+        columns=config["group_by_column"], 
+        values=config["y_column"]
+    ).sort_index()
     
     # Create the line chart
     st.line_chart(
-        chart_data, 
-        x_label="Days After Launch", 
-        y_label="Average USD Price",
+        chart_data,
+        x_label=config["x_label"],
+        y_label=config["y_label"], 
         use_container_width=True
     )
     
-    # Show summary statistics in an expandable section
-    with st.expander("📈 Regular Card Analysis", expanded=False):
+    # Show analysis in expandable section
+    with st.expander(config["expanded_title"], expanded=False):
         col1, col2 = st.columns(2)
         
         with col1:
             st.write("**Sets Tracked:**")
-            sets = launch_df['SET_NAME'].unique()
-            for set_name in sorted(sets):
-                set_data = launch_df[launch_df['SET_NAME'] == set_name]
-                avg_price = set_data['AVG_USD'].mean()
-                st.write(f"- {set_name}: ${avg_price:.2f} avg")
+            groups = df[config["group_by_column"]].unique()
+            for group in sorted(groups):
+                group_data = df[df[config["group_by_column"]] == group]
+                avg_price = group_data[config["y_column"]].mean()
+                st.write(f"- {group}: ${avg_price:.2f} avg")
         
         with col2:
             st.write("**Dataset Overview:**")
-            st.write(f"- Total data points: {len(launch_df):,}")
-            st.write(f"- Tracking period: 1-300 days after release")
-            st.write(f"- Card rarities: Mythic & Rare only")
-            st.write(f"- Sets analyzed: {len(sets)} expansion sets")
+            # Dynamic analysis stats
+            for label, stat_config in config["analysis_columns"].items():
+                if isinstance(stat_config, str):
+                    if stat_config in ["count_rows", "count_unique_groups"]:
+                        value = calculate_analysis_stat(df, stat_config, config.get("group_by_column"))
+                    else:
+                        value = stat_config
+                else:
+                    value = str(stat_config)
+                st.write(f"- {label}: {value}")
             
-            # Additional insights
+            # Dynamic insights
             st.write("**Key Insights:**")
-            overall_avg = launch_df['AVG_USD'].mean()
-            st.write(f"- Overall average price: ${overall_avg:.2f}")
-            
-            # Find the set with highest average price
-            set_averages = launch_df.groupby('SET_NAME')['AVG_USD'].mean()
-            highest_set = set_averages.idxmax()
-            highest_price = set_averages.max()
-            st.write(f"- Highest average set: {highest_set} (${highest_price:.2f})")
+            for label, insight_config in config["insights"].items():
+                insight_value = calculate_insight(df, *insight_config)
+                st.write(f"- {label}: {insight_value}")
 
-else:
-    st.error("Unable to load regular price analysis data. Please try refreshing the page.")
+def render_home_page():
+    """Render the home/overview page"""
+    st.title(DASHBOARD_CONFIG["main_title"])
+    st.write(DASHBOARD_CONFIG["main_description"])
+    
+    # Show home page content
+    st.markdown(DASHBOARD_CONFIG["home_page_content"])
+    
+    # Optional: Show quick stats or overview
+    st.subheader("📋 Available Analysis Pages")
+    
+    for config in CHART_CONFIGS:
+        with st.container():
+            col1, col2 = st.columns([1, 10])
+            with col1:
+                st.write(config["page_icon"])
+            with col2:
+                st.write(f"**{config['page_name']}** - {config['description']}")
 
-# Foil Card Prices
-st.subheader("✨ Foil Card Prices")
-if not foil_df.empty:
-    # Prepare data for chart (pivot to get sets as separate series)
-    foil_chart_data = foil_df.pivot(index='DATE_DIFF', columns='SET_NAME', values='AVG_USD_FOIL')
-    
-    # Sort by date_diff for proper line chart
-    foil_chart_data = foil_chart_data.sort_index()
-    
-    # Create the line chart
-    st.line_chart(
-        foil_chart_data, 
-        x_label="Days After Launch", 
-        y_label="Average USD Foil Price",
-        use_container_width=True
+# =============================================================================
+# MAIN APPLICATION WITH PAGE ROUTING
+# =============================================================================
+
+def main():
+    # Page configuration
+    st.set_page_config(
+        page_title=DASHBOARD_CONFIG["page_title"],
+        page_icon=DASHBOARD_CONFIG["page_icon"],
+        layout="wide"
     )
     
-    # Show summary statistics in an expandable section
-    with st.expander("✨ Foil Card Analysis", expanded=False):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write("**Sets Tracked:**")
-            foil_sets = foil_df['SET_NAME'].unique()
-            for set_name in sorted(foil_sets):
-                set_data = foil_df[foil_df['SET_NAME'] == set_name]
-                avg_price = set_data['AVG_USD_FOIL'].mean()
-                st.write(f"- {set_name}: ${avg_price:.2f} avg")
-        
-        with col2:
-            st.write("**Dataset Overview:**")
-            st.write(f"- Total data points: {len(foil_df):,}")
-            st.write(f"- Tracking period: 1-300 days after release")
-            st.write(f"- Card type: All expansion cards")
-            st.write(f"- Sets analyzed: {len(foil_sets)} expansion sets")
-            
-            # Additional insights
-            st.write("**Key Insights:**")
-            overall_foil_avg = foil_df['AVG_USD_FOIL'].mean()
-            st.write(f"- Overall average foil price: ${overall_foil_avg:.2f}")
-            
-            # Find the set with highest average foil price
-            foil_set_averages = foil_df.groupby('SET_NAME')['AVG_USD_FOIL'].mean()
-            highest_foil_set = foil_set_averages.idxmax()
-            highest_foil_price = foil_set_averages.max()
-            st.write(f"- Highest average set: {highest_foil_set} (${highest_foil_price:.2f})")
+    # Sidebar for navigation
+    st.sidebar.title("📊 Navigation")
+    
+    # Create page options - just the chart pages
+    page_options = [f"{config['page_icon']} {config['page_name']}" for config in CHART_CONFIGS]
+    
+    # Page selection using radio buttons
+    selected_page = st.sidebar.radio(
+        "Choose a page:",
+        page_options,
+        index=0
+    )
+    
+    # Add some sidebar info
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ℹ️ Info")
+    cache_hours = DASHBOARD_CONFIG["cache_hours"]
+    st.sidebar.caption(f"Data cached for {cache_hours} hours")
+    st.sidebar.caption("Updates automatically")
+    
+    # Route to appropriate chart page
+    for config in CHART_CONFIGS:
+        if selected_page == f"{config['page_icon']} {config['page_name']}":
+            render_chart_page(config)
+            break
+    
+    # Footer (appears on all pages)
+    st.markdown("---")
+    st.caption(f"💡 Data updates once daily and is cached for {DASHBOARD_CONFIG['cache_hours']} hours to optimize performance.")
 
-else:
-    st.error("Unable to load foil price analysis data. Please try refreshing the page.")
-    st.info("If the problem persists, there may be an issue with the data source.")
-
-# Footer
-st.markdown("---")
-st.caption("💡 Data updates once daily and is cached for 24 hours to optimize performance.")
+if __name__ == "__main__":
+    main()
