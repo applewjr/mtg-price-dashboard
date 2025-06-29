@@ -35,7 +35,7 @@ CHART_CONFIGS = [
         "analysis_columns": {
             "Total data points": "count_rows",
             "Tracking period": "1-300 days after release", 
-            "Card rarities": "Mythic & Rare only",
+            "Card rarities": "All expansion cards",
             "Sets analyzed": "count_unique_groups"
         },
         "insights": {
@@ -104,6 +104,52 @@ CHART_CONFIGS = [
         "analysis_columns": {
             "Total data points": "count_rows",
             "Tracking period": "1-300 days after release",
+            "Card type": "All expansion cards", 
+            "Sets analyzed": "count_unique_groups"
+        },
+        "insights": {
+            "Overall average foil price": ("mean", "AVG_USD"),
+            "Highest average set": ("max_group_avg", "AVG_USD", "SET_NAME")
+        }
+    },
+    {
+        "page_name": "Pre-Release",
+        "page_icon": "💰",
+        "title": "Regular Card Prices",
+        "description": "Average price trends for cards across different sets",
+        "table_name": "price_before_launch",
+        "x_column": "DATE_DIFF",
+        "y_column": "AVG_USD", 
+        "group_by_column": "SET_NAME",
+        "x_label": "Days Before Launch",
+        "y_label": "Average USD Price",
+        "expanded_title": "Regular Card Analysis",
+        "analysis_columns": {
+            "Total data points": "count_rows",
+            "Tracking period": "45 days before release", 
+            "Card rarities": "All expansion cards",
+            "Sets analyzed": "count_unique_groups"
+        },
+        "insights": {
+            "Overall average price": ("mean", "AVG_USD"),
+            "Highest average set": ("max_group_avg", "AVG_USD", "SET_NAME")
+        }
+    },
+    {
+        "page_name": "Pre-Release Foil",
+        "page_icon": "✨",
+        "title": "Foil Card Prices",
+        "description": "Average price trends for foil cards across different sets",
+        "table_name": "price_before_launch_foil",
+        "x_column": "DATE_DIFF",
+        "y_column": "AVG_USD",
+        "group_by_column": "SET_NAME",
+        "x_label": "Days Before Launch", 
+        "y_label": "Average USD Foil Price",
+        "expanded_title": "Foil Card Analysis",
+        "analysis_columns": {
+            "Total data points": "count_rows",
+            "Tracking period": "45 days before release",
             "Card type": "All expansion cards", 
             "Sets analyzed": "count_unique_groups"
         },
