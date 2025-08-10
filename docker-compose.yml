@@ -1,0 +1,17 @@
+services:
+  mtg-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mtg-price-dashboard
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./.streamlit/secrets.toml:/app/.streamlit/secrets.toml:ro
+    restart: unless-stopped
+    networks:
+      - mtg-network
+
+networks:
+  mtg-network:
+    driver: bridge

@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment files (these contain sensitive data)
+.env
+.env.local
+.env.production
+
+# Secrets (if using file-based secrets, exclude the template)
+.streamlit/secrets.toml.example
+.streamlit/secrets.toml
+
+# Documentation
+README.md
+docs/
+
+# Cache
+.cache
+.pytest_cache

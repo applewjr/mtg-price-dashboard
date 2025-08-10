@@ -200,19 +200,32 @@ def execute_query_with_retry(query: str, max_retries: int = 2) -> pd.DataFrame:
                 return pd.DataFrame()
             time.sleep(1)
 
+@st.cache_data(ttl=24*3600, show_spinner=False)  # Cache for 24 hours  
+def preload_all_data() -> Dict[str, pd.DataFrame]:
+    """
+    Preload ALL chart data with clean UI - messages only show during actual loading.
+    """
+    all_data = {}
+    table_names = set(config["table_name"] for config in CHART_CONFIGS)
+    
+    try:
+        session, _ = get_snowflake_session()
+        
+        for table_name in sorted(table_names):
+            query = f"SELECT * FROM {table_name}"
+            result = session.sql(query)
+            all_data[table_name] = result.to_pandas()
+        
+        return all_data
+        
+    except Exception as e:
+        st.error(f"Failed to preload data: {str(e)}")
+        return {}
+    
 def get_cached_data(table_name: str, cache_hours: int = 24) -> pd.DataFrame:
-    """Generic function to get and cache data from any table"""
-    
-    @st.cache_data(ttl=cache_hours*3600, show_spinner=False)
-    def _fetch_data(table: str) -> pd.DataFrame:
-        try:
-            query = f"SELECT * FROM {table}"
-            return execute_query_with_retry(query)
-        except Exception as e:
-            st.error(f"Error querying {table}: {str(e)}")
-            return pd.DataFrame()
-    
-    return _fetch_data(table_name)
+    """Get data from the preloaded cache"""
+    all_data = preload_all_data()
+    return all_data.get(table_name, pd.DataFrame())
 
 def calculate_insight(df: pd.DataFrame, insight_type: str, *args) -> str:
     """Calculate various insights from the dataframe"""
@@ -244,14 +257,14 @@ def render_chart_page(config: Dict[str, Any]):
     st.title(config["title"])
     st.write(config["description"])
     
-    # Load data with spinner
-    with st.spinner(f"Loading {config['page_name'].lower()} data..."):
-        df = get_cached_data(config["table_name"], DASHBOARD_CONFIG["cache_hours"])
+    # Get data from preloaded cache (no spinner needed since data is already loaded)
+    df = get_cached_data(config["table_name"], DASHBOARD_CONFIG["cache_hours"])
     
     if df.empty:
-        st.error(f"Unable to load data from {config['table_name']}. Please try refreshing the page.")
+        st.error(f"❌ No data available for {config['table_name']}. Data may have failed to load during startup.")
+        st.info("💡 Try refreshing the page to reload all data.")
         return
-    
+        
     # Prepare data for chart
     chart_data = df.pivot(
         index=config["x_column"], 
@@ -347,7 +360,19 @@ def main():
     st.sidebar.markdown("### ℹ️ Info")
     cache_hours = DASHBOARD_CONFIG["cache_hours"]
     st.sidebar.caption(f"Data cached for {cache_hours} hours")
-    st.sidebar.caption("Updates automatically")
+    st.sidebar.caption("All data preloaded for optimal Snowflake billing")
+    
+    # Add cache status to sidebar
+    all_data = preload_all_data()  # This triggers the preload on first visit
+    loaded_tables = sum(1 for df in all_data.values() if not df.empty)
+    total_tables = len(set(config["table_name"] for config in CHART_CONFIGS))
+    
+    if loaded_tables > 0:
+        st.sidebar.success(f"✅ {loaded_tables}/{total_tables} datasets loaded")
+        total_rows = sum(len(df) for df in all_data.values())
+        st.sidebar.caption(f"📊 {total_rows:,} total rows cached")
+    else:
+        st.sidebar.warning("⚠️ No data loaded yet")
     
     # Route to appropriate chart page
     for config in CHART_CONFIGS:
@@ -357,7 +382,8 @@ def main():
     
     # Footer (appears on all pages)
     st.markdown("---")
-    st.caption(f"💡 Data updates once daily and is cached for {DASHBOARD_CONFIG['cache_hours']} hours to optimize performance.")
+    st.caption(f"💡 All data loads together at startup to optimize Snowflake billing (60-second minimum charge).")
+    st.caption(f"📅 Data updates once daily and is cached for {DASHBOARD_CONFIG['cache_hours']} hours.")
 
 if __name__ == "__main__":
     main()
